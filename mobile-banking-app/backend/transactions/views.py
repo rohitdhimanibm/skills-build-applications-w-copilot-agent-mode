@@ -37,9 +37,6 @@ class BillPaymentListCreateView(generics.ListCreateAPIView):
     
     def get_queryset(self):
         return BillPayment.objects.filter(user=self.request.user)
-    
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
 
 class BillPaymentDetailView(generics.RetrieveAPIView):
     """API endpoint to retrieve a bill payment"""
