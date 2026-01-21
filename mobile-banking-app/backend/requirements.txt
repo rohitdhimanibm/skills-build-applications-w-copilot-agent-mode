@@ -1,0 +1,7 @@
+Django==4.2.26
+djangorestframework==3.14.0
+django-allauth==0.51.0
+django-cors-headers==4.5.0
+dj-rest-auth==2.2.6
+djangorestframework-simplejwt==5.2.2
+python-decouple==3.8
