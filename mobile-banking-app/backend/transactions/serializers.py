@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from .models import Transaction, BillPayment
 from django.utils import timezone
+from django.db import transaction as db_transaction
+from django.db.models import F
 import uuid
 
 class TransactionSerializer(serializers.ModelSerializer):
@@ -36,26 +38,32 @@ class FundTransferSerializer(serializers.Serializer):
         """Create fund transfer transaction"""
         user = self.context['request'].user
         transaction_id = f"TXN{uuid.uuid4().hex[:12].upper()}"
+        amount = validated_data['amount']
         
-        transaction = Transaction.objects.create(
-            user=user,
-            transaction_type='TRANSFER',
-            transaction_id=transaction_id,
-            **validated_data
-        )
+        # Use atomic transaction to prevent race conditions
+        with db_transaction.atomic():
+            # Lock the user profile for update
+            profile = user.profile.__class__.objects.select_for_update().get(pk=user.profile.pk)
+            
+            # Check balance
+            if profile.balance < amount:
+                raise serializers.ValidationError("Insufficient balance")
+            
+            # Create transaction
+            trans = Transaction.objects.create(
+                user=user,
+                transaction_type='TRANSFER',
+                transaction_id=transaction_id,
+                status='COMPLETED',
+                **validated_data
+            )
+            
+            # Update balance atomically
+            profile.balance = F('balance') - amount
+            profile.save()
+            profile.refresh_from_db()
         
-        # Process the transfer (simplified - in real app, this would involve more logic)
-        if user.profile.balance >= validated_data['amount']:
-            user.profile.balance -= validated_data['amount']
-            user.profile.save()
-            transaction.status = 'COMPLETED'
-            transaction.save()
-        else:
-            transaction.status = 'FAILED'
-            transaction.save()
-            raise serializers.ValidationError("Insufficient balance")
-        
-        return transaction
+        return trans
 
 class BillPaymentSerializer(serializers.ModelSerializer):
     """Serializer for BillPayment model"""
@@ -81,33 +89,37 @@ class BillPaymentSerializer(serializers.ModelSerializer):
         amount = validated_data.pop('amount')
         transaction_id = f"BILL{uuid.uuid4().hex[:12].upper()}"
         
-        # Create transaction
-        transaction = Transaction.objects.create(
-            user=user,
-            transaction_type='BILL_PAYMENT',
-            transaction_id=transaction_id,
-            amount=amount,
-            recipient_account=validated_data['consumer_number'],
-            recipient_name=validated_data['biller_name'],
-            description=f"Bill Payment - {validated_data['biller_category']}"
-        )
-        
-        # Create bill payment
-        bill_payment = BillPayment.objects.create(
-            user=user,
-            transaction=transaction,
-            **validated_data
-        )
-        
-        # Process the payment (simplified)
-        if user.profile.balance >= amount:
-            user.profile.balance -= amount
-            user.profile.save()
-            transaction.status = 'COMPLETED'
-            transaction.save()
-        else:
-            transaction.status = 'FAILED'
-            transaction.save()
-            raise serializers.ValidationError("Insufficient balance")
+        # Use atomic transaction to prevent race conditions
+        with db_transaction.atomic():
+            # Lock the user profile for update
+            profile = user.profile.__class__.objects.select_for_update().get(pk=user.profile.pk)
+            
+            # Check balance
+            if profile.balance < amount:
+                raise serializers.ValidationError("Insufficient balance")
+            
+            # Create transaction
+            trans = Transaction.objects.create(
+                user=user,
+                transaction_type='BILL_PAYMENT',
+                transaction_id=transaction_id,
+                amount=amount,
+                recipient_account=validated_data['consumer_number'],
+                recipient_name=validated_data['biller_name'],
+                description=f"Bill Payment - {validated_data['biller_category']}",
+                status='COMPLETED'
+            )
+            
+            # Create bill payment
+            bill_payment = BillPayment.objects.create(
+                user=user,
+                transaction=trans,
+                **validated_data
+            )
+            
+            # Update balance atomically
+            profile.balance = F('balance') - amount
+            profile.save()
+            profile.refresh_from_db()
         
         return bill_payment

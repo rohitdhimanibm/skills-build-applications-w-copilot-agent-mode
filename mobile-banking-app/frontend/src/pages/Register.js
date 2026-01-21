@@ -30,7 +30,9 @@ function Register() {
 
     try {
       const response = await authService.register(formData);
-      localStorage.setItem('token', response.data.token);
+      // Handle both 'token' and 'key' field names for consistency
+      const authToken = response.data.token || response.data.key;
+      localStorage.setItem('token', authToken);
       navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed. Please try again.');
