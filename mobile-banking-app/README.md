@@ -14,7 +14,7 @@ A full-stack mobile banking application with user registration, beneficiary mana
 ## Technology Stack
 
 ### Backend
-- **Django 4.1.7**: Python web framework
+- **Django 4.2.26**: Python web framework (security patched version)
 - **Django REST Framework**: API development
 - **SQLite**: Database (can be easily switched to PostgreSQL or MySQL)
 - **Token Authentication**: Secure API access
